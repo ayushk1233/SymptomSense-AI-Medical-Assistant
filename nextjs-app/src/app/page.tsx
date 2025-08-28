@@ -28,21 +28,60 @@ export default function Page() {
   ], []);
   const [tipIndex, setTipIndex] = useState(0);
 
+  const handleNewChat = () => {
+    try { localStorage.removeItem("symptom_chat_v1"); } catch {}
+    setMessages([]);
+    setInput("");
+    setTags([]);
+    setPrintHtml("");
+    setShowPrintConfirm(false);
+  };
+
   // Load and persist messages to localStorage
   useEffect(() => {
     try {
       const raw = localStorage.getItem("symptom_chat_v1");
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) setMessages(parsed);
+        if (Array.isArray(parsed)) {
+          const normalized = parsed.map((m: any) => {
+            // If already in new format with structured, trust it
+            if (m && m.structured && typeof m.role === 'string') {
+              return { role: m.role, structured: m.structured };
+            }
+            // If content looks like serialized structured JSON, try to parse it
+            if (m && typeof m.content === 'string' && typeof m.role === 'string') {
+              try {
+                const maybe = JSON.parse(m.content);
+                if (
+                  maybe &&
+                  Array.isArray(maybe.possibilities) &&
+                  Array.isArray(maybe.nextSteps) &&
+                  Array.isArray(maybe.clarifyingQuestions) &&
+                  typeof maybe.severity === 'number'
+                ) {
+                  return { role: m.role, structured: maybe };
+                }
+              } catch {}
+              // Otherwise, treat as plain HTML content (assistant) or text (user)
+              return { role: m.role, content: m.content };
+            }
+            return m;
+          });
+          setMessages(normalized);
+        }
       }
     } catch {}
   }, []);
 
   useEffect(() => {
     try {
-      // Only store role/content to keep storage compact; structured can be reconstructed from server replies
-      const compact = messages.map(m => m.structured ? { role: m.role, content: JSON.stringify(m.structured) } : { role: m.role, content: m.content });
+      // Store role + structured (object) when present, otherwise role + content
+      const compact = messages.map((m) =>
+        m.structured
+          ? { role: m.role, structured: m.structured }
+          : { role: m.role, content: m.content }
+      );
       localStorage.setItem("symptom_chat_v1", JSON.stringify(compact));
     } catch {}
   }, [messages]);
@@ -165,6 +204,13 @@ export default function Page() {
               <li>Stroke: FAST (Face-Arm-Speech-Time)</li>
               <li>Trouble breathing: seek urgent care</li>
             </ul>
+          </div>
+          <div className="mt-3">
+            <button
+              onClick={handleNewChat}
+              className="w-full text-xs px-3 py-2 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+              title="Start a new chat"
+            >New chat</button>
           </div>
         </aside>
         {/* Main chat */}

@@ -28,6 +28,25 @@ export default function Page() {
   ], []);
   const [tipIndex, setTipIndex] = useState(0);
 
+  // Load and persist messages to localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("symptom_chat_v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setMessages(parsed);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      // Only store role/content to keep storage compact; structured can be reconstructed from server replies
+      const compact = messages.map(m => m.structured ? { role: m.role, content: JSON.stringify(m.structured) } : { role: m.role, content: m.content });
+      localStorage.setItem("symptom_chat_v1", JSON.stringify(compact));
+    } catch {}
+  }, [messages]);
+
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -101,10 +120,15 @@ export default function Page() {
     setLoading(true);
 
     try {
+      // Build a trimmed history to provide conversation context
+      const recent = messages
+        .slice(-8) // keep last 8 turns
+        .map((m) => m.structured ? { role: m.role, content: JSON.stringify(m.structured) } : { role: m.role, content: m.content || "" });
+
       const res = await fetch("/api/symptom-checker", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({ message: input, history: recent }),
       });
       const data = await res.json();
       const botMessage = data.structured
